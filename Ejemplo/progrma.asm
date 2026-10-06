@@ -1,0 +1,2 @@
+MOV AX, 5
+MOT BX, 3
