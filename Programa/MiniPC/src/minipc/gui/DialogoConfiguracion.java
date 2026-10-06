@@ -56,9 +56,6 @@ import java.util.List;
  * El indice de archivos ocupa siempre el 5% inicial del disco (minimo 10 entradas),
  * por lo que su tamano se recalcula cada vez que cambia el tamano del disco.
  *
- * La ventana adapta su tamaño al espacio disponible de la pantalla.
- * Cuando el contenido no cabe verticalmente, solamente la zona central
- * utiliza desplazamiento, manteniendo visibles el encabezado y los botones.
  */
 public class DialogoConfiguracion extends JDialog {
 

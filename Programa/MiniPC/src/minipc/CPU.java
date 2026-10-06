@@ -40,8 +40,11 @@ public class CPU {
     /** Acumulador. */
     private int ac;
 
-    /** Registros de proposito general AX, BX, CX, DX. */
+    /** Registros de proposito general AX, BX, CX, DX, AH y AL. */
     private final Map<Registro, Integer> registros;
+
+    /** Bandera de igualdad: la activa CMP cuando ambos registros son iguales; la consultan JE y JNE. */
+    private boolean flagIgual;
 
     /** Proceso cuyo contexto esta cargado actualmente en la CPU (null si no hay ninguno). */
     private BCP procesoActual;
@@ -57,6 +60,7 @@ public class CPU {
         pc = 0;
         ir = "";
         ac = 0;
+        flagIgual = false;
         for (Registro registro : Registro.values()) {
             registros.put(registro, 0);
         }
@@ -72,6 +76,7 @@ public class CPU {
         pc = bcp.getPc();
         ir = bcp.getIr();
         ac = bcp.getAc();
+        flagIgual = bcp.isFlagIgual();
         for (Registro registro : Registro.values()) {
             registros.put(registro, bcp.obtenerValorRegistro(registro));
         }
@@ -89,6 +94,7 @@ public class CPU {
         procesoActual.setPc(pc);
         procesoActual.setIr(ir);
         procesoActual.setAc(ac);
+        procesoActual.setFlagIgual(flagIgual);
         for (Registro registro : Registro.values()) {
             procesoActual.asignarValorRegistro(registro, registros.get(registro));
         }
@@ -116,7 +122,7 @@ public class CPU {
 
     /**
      * Interpreta el texto que quedo en el IR (ej: "MOV AX, 5") y reconstruye la Instruccion
-     * (operador, registro y, si aplica, el valor inmediato).
+     * (operador y operandos), usando el mismo procesador que valido el archivo.
      * El numero de linea original no se conoce en esta etapa, por lo que se usa -1.
      */
     private Instruccion decode() {
@@ -131,34 +137,106 @@ public class CPU {
     // EXECUTE
     // ------------------------------------------------------------------
 
-    /** Aplica la operacion decodificada sobre los registros de la CPU (AC y AX-DX). */
-    private void execute(Instruccion instruccion) {
-        Registro registro = instruccion.getRegistro();
-
+    /**
+     * Aplica la operacion decodificada sobre los registros de la CPU.
+     * @return true si la instruccion cambio el PC (un salto tomado), para no avanzarlo despues.
+     */
+    private boolean execute(Instruccion instruccion) {
         switch (instruccion.getOperador()) {
-            case MOV:
-                registros.put(registro, instruccion.getValor());
-                break;
+            case MOV: {
+                Registro destino = instruccion.getRegistro(0);
+                int valor = instruccion.esRegistro(1)
+                        ? registros.get(instruccion.getRegistro(1))   // MOV registro, registro
+                        : instruccion.getNumero(1);                    // MOV registro, numero
+                registros.put(destino, valor);
+                return false;
+            }
 
             case LOAD:
-                ac = registros.get(registro);
-                break;
+                ac = registros.get(instruccion.getRegistro(0));
+                return false;
 
             case STORE:
-                registros.put(registro, ac);
-                break;
+                registros.put(instruccion.getRegistro(0), ac);
+                return false;
 
             case ADD:
-                ac = sumarConControl(ac, registros.get(registro));
-                break;
+                ac = sumarConControl(ac, registros.get(instruccion.getRegistro(0)));
+                return false;
 
             case SUB:
-                ac = restarConControl(ac, registros.get(registro));
-                break;
+                ac = restarConControl(ac, registros.get(instruccion.getRegistro(0)));
+                return false;
+
+            case INC:
+            case DEC: {
+                int cambio = instruccion.getOperador() == Operador.INC ? 1 : -1;
+                if (instruccion.getCantidadOperandos() == 0) {
+                    ac = sumarConControl(ac, cambio);               // INC / DEC sin operando: AC
+                } else {
+                    Registro registro = instruccion.getRegistro(0);
+                    registros.put(registro, sumarConControl(registros.get(registro), cambio));
+                }
+                return false;
+            }
+
+            case SWAP: {
+                Registro primero = instruccion.getRegistro(0);
+                Registro segundo = instruccion.getRegistro(1);
+                int temporal = registros.get(primero);
+                registros.put(primero, registros.get(segundo));
+                registros.put(segundo, temporal);
+                return false;
+            }
+
+            case CMP:
+                flagIgual = registros.get(instruccion.getRegistro(0)).equals(registros.get(instruccion.getRegistro(1)));
+                return false;
+
+            case JMP:
+                return saltar(instruccion);
+
+            case JE:
+                return flagIgual && saltar(instruccion);
+
+            case JNE:
+                return !flagIgual && saltar(instruccion);
+
+            case INT:
+                if (instruccion.getInterrupcion() == Interrupcion.FIN_PROGRAMA) {
+                    procesoActual.setEstado(EstadoProceso.TERMINADO); // INT 20H
+                    return false;
+                }
+                throw new UnsupportedOperationException("INT " + instruccion.getInterrupcion().getCodigo()
+                        + " está validada, pero su ejecución (pantalla, teclado y archivos) se implementa en la Fase 7.");
+
+            case PARAM:
+            case PUSH:
+            case POP:
+                throw new UnsupportedOperationException(instruccion.getOperador()
+                        + " está validada, pero su ejecución (pila del proceso) se implementa en la Fase 6.");
 
             default:
                 throw new IllegalStateException("Operador no soportado: " + instruccion.getOperador());
         }
+    }
+
+    /**
+     * Mueve el PC segun el desplazamiento, contado desde la propia instruccion de salto.
+     * Proteccion: el destino debe quedar dentro del espacio del proceso (Base..Limite);
+     * si no, es un desbordamiento y se detiene el proceso.
+     * @return true (el PC ya quedo en el destino).
+     */
+    private boolean saltar(Instruccion instruccion) {
+        long destino = (long) pc + instruccion.getDesplazamiento();
+        if (procesoActual != null
+                && (destino < procesoActual.getLimiteInferior() || destino > procesoActual.getLimiteSuperior())) {
+            throw new IllegalStateException("Desbordamiento: " + instruccion.getTextoNormalizado() + " en la posición "
+                    + pc + " saltaría a la posición " + destino + ", fuera del proceso ("
+                    + procesoActual.getLimiteInferior() + "-" + procesoActual.getLimiteSuperior() + ").");
+        }
+        pc = (int) destino;
+        return true;
     }
 
     /** Suma dos valores detectando el desbordamiento del tipo entero. */
@@ -204,8 +282,10 @@ public class CPU {
 
         fetch();
         Instruccion instruccion = decode();
-        execute(instruccion);
-        pc++;
+        boolean salto = execute(instruccion);
+        if (!salto) {
+            pc++;
+        }
 
         bcp.registrarInstruccionEjecutada();
         guardarContexto(); // CPU -> BCP -> memoria (Kernel)
@@ -248,6 +328,10 @@ public class CPU {
 
     public int getRegistro(Registro registro) {
         return registros.get(registro);
+    }
+
+    public boolean isFlagIgual() {
+        return flagIgual;
     }
 
     public BCP getProcesoActual() {

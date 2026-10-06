@@ -8,7 +8,8 @@ import java.util.Map;
  *
  * Guarda todo el estado necesario para pausar y retomar un proceso en la Mini PC:
  *   - Identificacion y estado del proceso.
- *   - COPIA de los registros de la CPU (contexto): PC, IR, AC, AX, BX, CX, DX.
+ *   - COPIA de los registros de la CPU (contexto): PC, IR, AC, AX, BX, CX, DX, AH, AL
+ *     y la bandera de igualdad (flagIgual) que deja CMP.
  *     Los registros "reales" estan en la clase CPU; aqui solo se guarda su valor
  *     cuando el proceso sale de la CPU, para poder restaurarlo despues.
  *   - Limites de memoria asignados al proceso (protección).
@@ -74,6 +75,9 @@ public class BCP {
     private final int limiteSuperior;
 
     private int instruccionesEjecutadas;
+
+    /** Bandera de igualdad de la ultima instruccion CMP (contexto que usan JE y JNE). */
+    private boolean flagIgual;
 
     public BCP(int pid, int limiteInferior, int limiteSuperior) {
         this.pid = pid;
@@ -157,6 +161,14 @@ public class BCP {
 
     public void setAc(int ac) {
         this.ac = ac;
+    }
+
+    public boolean isFlagIgual() {
+        return flagIgual;
+    }
+
+    public void setFlagIgual(boolean flagIgual) {
+        this.flagIgual = flagIgual;
     }
 
     public int getLimiteInferior() {

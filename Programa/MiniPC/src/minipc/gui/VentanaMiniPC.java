@@ -9,6 +9,7 @@ import minipc.Instruccion;
 import minipc.Memoria;
 import minipc.ProcesadorInstrucciones;
 import minipc.Registro;
+import minipc.ResultadoAnalisis;
 import minipc.config.Configuracion;
 
 import javax.swing.BorderFactory;
@@ -425,12 +426,16 @@ public class VentanaMiniPC extends JFrame {
             }
 
             List<String> lineas = gestorArchivo.leerLineas(archivo);
-            List<Instruccion> nuevasInstrucciones = procesador.procesarPrograma(lineas);
+            ResultadoAnalisis analisis = procesador.analizarPrograma(lineas);
 
-            if (!procesador.todasValidas(nuevasInstrucciones)) {
-                mostrarErroresDeValidacion(nuevasInstrucciones);
+            if (!analisis.esValido()) {
+                mostrarErroresDeValidacion(archivo.getName(), analisis);
                 return;
             }
+            if (analisis.tieneAdvertencias() && !confirmarAdvertencias(archivo.getName(), analisis)) {
+                return;
+            }
+            List<Instruccion> nuevasInstrucciones = analisis.getInstrucciones();
 
             Memoria nuevaMemoria = new Memoria(configuracion.getMemoriaPrincipal());
             BCP nuevoBcp = cargadorMemoria.cargar(nuevasInstrucciones, nuevaMemoria, 1);
@@ -458,15 +463,36 @@ public class VentanaMiniPC extends JFrame {
         }
     }
 
-    private void mostrarErroresDeValidacion(List<Instruccion> instruccionesConError) {
-        StringBuilder mensaje = new StringBuilder("El archivo tiene errores:\n\n");
-        for (Instruccion instruccion : instruccionesConError) {
-            if (!instruccion.isValida()) {
-                mensaje.append("Línea ").append(instruccion.getNumeroLinea())
-                        .append(": ").append(instruccion.getMensajeError()).append("\n");
-            }
-        }
-        JOptionPane.showMessageDialog(this, mensaje.toString(), "Programa inválido", JOptionPane.WARNING_MESSAGE);
+    /** Muestra todos los errores del archivo (generales y por linea). */
+    private void mostrarErroresDeValidacion(String nombreArchivo, ResultadoAnalisis analisis) {
+        List<String> errores = analisis.getTodosLosErrores();
+        String texto = "El archivo \"" + nombreArchivo + "\" tiene " + errores.size() + " error(es):\n\n• "
+                + String.join("\n• ", errores);
+        JOptionPane.showMessageDialog(this, crearAreaDeMensaje(texto), "Programa inválido", JOptionPane.WARNING_MESSAGE);
+    }
+
+    /** Muestra las advertencias y pregunta si se carga el programa de todas formas. */
+    private boolean confirmarAdvertencias(String nombreArchivo, ResultadoAnalisis analisis) {
+        String texto = "El archivo \"" + nombreArchivo + "\" es válido, pero tiene advertencias:\n\n• "
+                + String.join("\n• ", analisis.getAdvertencias()) + "\n\n¿Desea cargarlo de todas formas?";
+        int opcion = JOptionPane.showConfirmDialog(this, crearAreaDeMensaje(texto), "Advertencias",
+                JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
+        return opcion == JOptionPane.YES_OPTION;
+    }
+
+    /** Texto con ajuste de linea y barra de desplazamiento, para mensajes largos. */
+    private JScrollPane crearAreaDeMensaje(String texto) {
+        javax.swing.JTextArea area = new javax.swing.JTextArea(texto);
+        area.setEditable(false);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setFont(EstiloUI.FUENTE_BASE);
+        area.setBackground(EstiloUI.PANEL);
+        area.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+        JScrollPane scroll = new JScrollPane(area);
+        scroll.setPreferredSize(new Dimension(520, Math.min(320, 70 + 22 * texto.split("\n").length)));
+        scroll.setBorder(BorderFactory.createLineBorder(EstiloUI.BORDE));
+        return scroll;
     }
 
     private void ejecutarUnPaso() {
