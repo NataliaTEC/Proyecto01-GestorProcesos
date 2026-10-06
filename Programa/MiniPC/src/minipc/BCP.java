@@ -37,15 +37,18 @@ public class BCP {
     public static final int CAMPO_DX = 9;
     public static final int CAMPO_BASE = 10;
     public static final int CAMPO_LIMITE = 11;
-    public static final int CAMPO_INSTRUCCIONES = 12;
 
-    /** Cantidad de posiciones de memoria que ocupa un BCP. */
-    public static final int TAMANO_EN_MEMORIA = 13;
+    /**
+     * Cantidad de posiciones de memoria que ocupa un BCP en el Kernel.
+     * Con la division 25/75, una memoria de 256 deja 64 posiciones de Kernel:
+     * 4 de encabezado del SO + 5 BCP x 12 = 64.
+     */
+    public static final int TAMANO_EN_MEMORIA = 12;
 
     /** Nombre de cada campo, en el mismo orden en que se guardan en memoria. */
     public static final String[] NOMBRES_CAMPOS = {
         "PID", "Estado", "Prioridad", "PC", "IR", "AC", "AX", "BX", "CX", "DX",
-        "Base", "Limite", "Instrucciones"
+        "Base", "Limite"
     };
 
     private final int pid;
@@ -206,7 +209,6 @@ public class BCP {
         valores[CAMPO_DX] = String.valueOf(registros.get(Registro.DX));
         valores[CAMPO_BASE] = String.valueOf(limiteInferior);
         valores[CAMPO_LIMITE] = String.valueOf(limiteSuperior);
-        valores[CAMPO_INSTRUCCIONES] = String.valueOf(instruccionesEjecutadas);
         return valores;
     }
 

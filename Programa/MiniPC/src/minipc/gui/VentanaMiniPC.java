@@ -9,17 +9,17 @@ import minipc.Instruccion;
 import minipc.Memoria;
 import minipc.ProcesadorInstrucciones;
 import minipc.Registro;
+import minipc.config.Configuracion;
 
 import javax.swing.BorderFactory;
+import javax.swing.Box;
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JSpinner;
 import javax.swing.JTable;
-import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
 import javax.swing.table.DefaultTableModel;
@@ -40,7 +40,8 @@ import java.util.List;
  * Ventana principal (100% gráfica) de la Mini PC.
  *
  * Flujo de uso:
- *   1) El usuario ajusta el tamaño de memoria (opcional) y pulsa "Cargar archivo".
+ *   1) El usuario pulsa "Cargar archivo": se abre la ventana de configuracion de memoria
+ *      (valores de config.properties o, si no existe, los valores por defecto).
  *   2) Se elige un .asm, se valida, se carga en Memoria y se crea el BCP.
  *   3) "Paso a paso" ejecuta una instrucción por clic.
  *      "Ejecutar" corre el programa completo, animando cada paso.
@@ -60,6 +61,9 @@ public class VentanaMiniPC extends JFrame {
     private Memoria memoria;
     private BCP bcp;
     private CPU cpu;
+
+    /** Configuracion de memoria/disco vigente (leida de config.properties o por defecto). */
+    private Configuracion configuracion = Configuracion.cargar();
     private Timer temporizadorEjecucion;
 
     // ---- Componentes ----
@@ -68,9 +72,10 @@ public class VentanaMiniPC extends JFrame {
     private JButton botonLimpiar;
     private JButton botonCargarArchivo;
 
-    private JSpinner spinnerMemoria;
+    private JLabel etiquetaMemoriaTotal;
     private JLabel etiquetaSO;
     private JLabel etiquetaUsuario;
+    private JLabel etiquetaDisco;
 
     private DefaultTableModel modeloInstrucciones;
     private DefaultTableModel modeloMemoria;
@@ -94,7 +99,7 @@ public class VentanaMiniPC extends JFrame {
     private JLabel valorInstrucciones;
 
     public VentanaMiniPC() {
-        super("Mini PC - Tarea Programada 1");
+        super("Gestor de Procesos - Proyecto 1");
         construirInterfaz();
         actualizarEstadoBotones();
     }
@@ -116,7 +121,7 @@ public class VentanaMiniPC extends JFrame {
         setLocationRelativeTo(null);
     }
 
-    /** Fila de botones + selector de memoria, en la parte superior. */
+    /** Fila de botones + resumen de la configuracion de memoria, en la parte superior. */
     private JPanel construirBarraSuperior() {
         JPanel contenedor = new JPanel();
         contenedor.setLayout(new javax.swing.BoxLayout(contenedor, javax.swing.BoxLayout.Y_AXIS));
@@ -151,34 +156,13 @@ public class VentanaMiniPC extends JFrame {
         filaSuperior.add(filaAcciones, BorderLayout.WEST);
         filaSuperior.add(filaCarga, BorderLayout.EAST);
 
-        // Fila 2: configuración de memoria (con íconos)
+        // Fila 2: resumen de la configuracion de memoria vigente (se cambia desde la ventana de configuracion)
         JPanel filaMemoria = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         filaMemoria.setBackground(EstiloUI.FONDO);
 
-        JLabel etiquetaMemoria = EstiloUI.crearEtiquetaSecundaria("Memoria total:");
-        etiquetaMemoria.setIcon(EstiloUI.iconoMemoria(EstiloUI.TEXTO_SECUNDARIO));
-        etiquetaMemoria.setIconTextGap(6);
-
-        spinnerMemoria = new JSpinner(new SpinnerNumberModel(256, Memoria.TAMANO_MINIMO, 8192, 4));
-        spinnerMemoria.setFont(EstiloUI.FUENTE_BASE);
-        spinnerMemoria.setPreferredSize(new Dimension(90, 30));
-        spinnerMemoria.addChangeListener(e -> actualizarEtiquetaDivisionMemoria());
-        // Permitir escribir directamente el valor (no solo usar las flechas)
-        JSpinner.NumberEditor editorMemoria = new JSpinner.NumberEditor(spinnerMemoria, "#");
-        spinnerMemoria.setEditor(editorMemoria);
-        editorMemoria.getTextField().setEditable(true);
-        editorMemoria.getTextField().setHorizontalAlignment(javax.swing.JTextField.LEFT);
-        // Si el usuario escribe y sale del campo (o presiona Enter), se valida/ajusta el valor
-        editorMemoria.getTextField().addFocusListener(new java.awt.event.FocusAdapter() {
-            @Override
-            public void focusLost(java.awt.event.FocusEvent e) {
-                try {
-                    editorMemoria.commitEdit();
-                } catch (java.text.ParseException ex) {
-                    spinnerMemoria.setValue(spinnerMemoria.getValue()); // revierte a lo último válido
-                }
-            }
-        });
+        etiquetaMemoriaTotal = EstiloUI.crearEtiquetaSecundaria("");
+        etiquetaMemoriaTotal.setIcon(EstiloUI.iconoMemoria(EstiloUI.TEXTO_SECUNDARIO));
+        etiquetaMemoriaTotal.setIconTextGap(6);
 
         etiquetaSO = EstiloUI.crearEtiquetaSecundaria("");
         etiquetaSO.setIcon(EstiloUI.iconoSistema(EstiloUI.TEXTO_SECUNDARIO));
@@ -188,14 +172,17 @@ public class VentanaMiniPC extends JFrame {
         etiquetaUsuario.setIcon(EstiloUI.iconoUsuario(EstiloUI.TEXTO_SECUNDARIO));
         etiquetaUsuario.setIconTextGap(6);
 
+        etiquetaDisco = EstiloUI.crearEtiquetaSecundaria("");
+
         actualizarEtiquetaDivisionMemoria();
 
-        filaMemoria.add(etiquetaMemoria);
-        filaMemoria.add(spinnerMemoria);
-        filaMemoria.add(javax.swing.Box.createHorizontalStrut(18));
+        filaMemoria.add(etiquetaMemoriaTotal);
+        filaMemoria.add(Box.createHorizontalStrut(18));
         filaMemoria.add(etiquetaSO);
-        filaMemoria.add(javax.swing.Box.createHorizontalStrut(14));
+        filaMemoria.add(Box.createHorizontalStrut(14));
         filaMemoria.add(etiquetaUsuario);
+        filaMemoria.add(Box.createHorizontalStrut(18));
+        filaMemoria.add(etiquetaDisco);
 
         contenedor.add(filaSuperior);
         contenedor.add(filaMemoria);
@@ -422,6 +409,15 @@ public class VentanaMiniPC extends JFrame {
     // ==================================================================
 
     private void cargarArchivo() {
+        // 1) Ventana de configuracion de memoria (solo editable si no hay programas cargados)
+        Configuracion elegida = new DialogoConfiguracion(this, configuracion, memoria == null).mostrar();
+        if (elegida == null) {
+            return; // el usuario cancelo la configuracion
+        }
+        configuracion = elegida;
+        actualizarEtiquetaDivisionMemoria();
+
+        // 2) Seleccion, validacion y carga del programa
         try {
             File archivo = gestorArchivo.seleccionarArchivo(this);
             if (archivo == null) {
@@ -436,8 +432,7 @@ public class VentanaMiniPC extends JFrame {
                 return;
             }
 
-            int tamanoMemoria = (Integer) spinnerMemoria.getValue();
-            Memoria nuevaMemoria = new Memoria(tamanoMemoria);
+            Memoria nuevaMemoria = new Memoria(configuracion.getMemoriaPrincipal());
             BCP nuevoBcp = cargadorMemoria.cargar(nuevasInstrucciones, nuevaMemoria, 1);
             CPU nuevaCpu = new CPU(nuevaMemoria);
 
@@ -453,7 +448,6 @@ public class VentanaMiniPC extends JFrame {
             resaltarFilaActual();
             actualizarEtiquetaDivisionMemoria();
 
-            spinnerMemoria.setEnabled(false);
             actualizarEstadoBotones();
 
         } catch (IOException ex) {
@@ -558,7 +552,6 @@ public class VentanaMiniPC extends JFrame {
         modeloMemoria.setRowCount(0);
         limpiarPanelBcp();
 
-        spinnerMemoria.setEnabled(true);
         actualizarEtiquetaDivisionMemoria();
         actualizarEstadoBotones();
     }
@@ -677,21 +670,13 @@ public class VentanaMiniPC extends JFrame {
         tabla.scrollRectToVisible(tabla.getCellRect(fila, 0, true));
     }
 
+    /** Muestra en la barra superior la distribucion de la configuracion vigente. */
     private void actualizarEtiquetaDivisionMemoria() {
-        int total = (Integer) spinnerMemoria.getValue();
-        int kernel;
-        int usuario;
-        if (memoria != null) {
-            // ya hay un programa cargado: se muestran los valores reales
-            kernel = memoria.getTamanoKernel();
-            usuario = memoria.getTamanoUsuario();
-        } else {
-            // aún no se ha cargado nada: se muestra una vista previa del reparto 25/75
-            kernel = (int) Math.round(total * Memoria.PROPORCION_KERNEL);
-            usuario = total - kernel;
-        }
-        etiquetaSO.setText("SO: " + kernel);
-        etiquetaUsuario.setText("Usuario: " + usuario);
+        etiquetaMemoriaTotal.setText("Memoria: " + configuracion.getMemoriaPrincipal());
+        etiquetaSO.setText("SO: " + configuracion.getTamanoAreaSO() + " (" + Memoria.PORCENTAJE_KERNEL + "%)");
+        etiquetaUsuario.setText("Usuario: " + configuracion.getTamanoAreaUsuario() + " (" + (100 - Memoria.PORCENTAJE_KERNEL) + "%)");
+        etiquetaDisco.setText("Disco: " + configuracion.getMemoriaSecundaria()
+                + "  (memoria virtual fija: " + configuracion.getMemoriaVirtual() + ")");
     }
 
     private void actualizarEstadoBotones() {
@@ -710,6 +695,5 @@ public class VentanaMiniPC extends JFrame {
         botonEjecutar.setEnabled(habilitado && bcp != null && bcp.tieneInstruccionesPendientes());
         botonLimpiar.setEnabled(habilitado);
         botonCargarArchivo.setEnabled(habilitado);
-        spinnerMemoria.setEnabled(habilitado && memoria == null);
     }
 }

@@ -11,17 +11,16 @@ import java.util.Arrays;
  * Una posicion vacia guarda la cadena "" (cadena vacia).
  *
  * La memoria se divide en dos espacios:
- *   - Espacio de KERNEL  : primer 25% de las posiciones.
- *   - Espacio de USUARIO : el 75% restante.
+ *   - Espacio de KERNEL : el primer 25% de las posiciones.
+ *   - Espacio de USUARIO: el 75% restante.
  *
- * El tamaño total es configurable, con un minimo de 128 posiciones.
+ * El tamano total viene de {@link minipc.config.Configuracion} (no queda en el codigo).
  * @author Natalia Granados Rosales
  */
 public class Memoria {
 
-    public static final int TAMANO_MINIMO = 128;
-
-    public static final double PROPORCION_KERNEL = 0.25;
+    /** Porcentaje de la memoria reservado para el Kernel (SO). El resto es para Usuario. */
+    public static final int PORCENTAJE_KERNEL = 25;
 
     private final int tamanoTotal;
     private final int tamanoKernel;
@@ -35,17 +34,26 @@ public class Memoria {
     private final String[] datos;
 
     /**
-     * Crea la memoria con el tamaño indicado, dividiendo automaticamente 25% para Kernel y 75% para Usuario.
-     * @param tamanoTotal cantidad total de posiciones (minimo 128).
-     * @throws IllegalArgumentException si el tamaño es menor al minimo permitido.
+     * Calcula cuantas posiciones le corresponden al Kernel (25% del total, redondeado hacia abajo).
+     */
+    public static int calcularTamanoKernel(int tamanoTotal) {
+        return tamanoTotal * PORCENTAJE_KERNEL / 100;
+    }
+
+    /**
+     * Crea la memoria con el tamano indicado, dividiendo automaticamente 25% para Kernel y 75% para Usuario.
+     * El tamano ya debe venir validado por la configuracion; aqui solo se verifica que sea coherente.
+     * @param tamanoTotal cantidad total de posiciones.
+     * @throws IllegalArgumentException si el tamano no permite tener ambos espacios.
      */
     public Memoria(int tamanoTotal) {
-        if (tamanoTotal < TAMANO_MINIMO) {
-            throw new IllegalArgumentException("El tamaño de memoria (" + tamanoTotal + ") es menor al mínimo requerido (" + TAMANO_MINIMO + ").");
+        int tamanoKernel = calcularTamanoKernel(tamanoTotal);
+        if (tamanoKernel <= 0 || tamanoKernel >= tamanoTotal) {
+            throw new IllegalArgumentException("El tamaño de memoria (" + tamanoTotal + ") es demasiado pequeño para dividirse entre Kernel y Usuario.");
         }
 
         this.tamanoTotal = tamanoTotal;
-        this.tamanoKernel = (int) Math.round(tamanoTotal * PROPORCION_KERNEL);
+        this.tamanoKernel = tamanoKernel;
         this.tamanoUsuario = tamanoTotal - tamanoKernel;
 
         this.inicioKernel = 0;
