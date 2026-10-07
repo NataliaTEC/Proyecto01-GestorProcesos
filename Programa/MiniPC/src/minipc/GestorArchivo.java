@@ -5,17 +5,26 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.Component;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.MalformedInputException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
- * Se encarga de Gestiona el archivo .asm desde disco:
- *   1) Abre una ventana gráfica (JFileChooser) para que el usuario busque y seleccione el archivo .asm que desee.
- *   2) Lee el contenido del archivo linea por linea.
- *   3) Envía esas lineas al ProcesadorInstrucciones para validarlas y procesarlas.
+ * Gestiona los archivos .asm del computador real y su paso al disco de la Mini PC:
+ *   1) Abre una ventana grafica (JFileChooser) para seleccionar UNO O VARIOS archivos .asm.
+ *   2) Lee el contenido de cada archivo linea por linea.
+ *   3) Valida cada archivo POR SEPARADO con {@link ProcesadorInstrucciones}.
+ *   4) Escribe en el {@link Disco} los archivos validos (y los registra en el indice);
+ *      los invalidos se rechazan con su lista de errores (archivo + linea).
  * @author Natalia Granados Rosales
  */
 public class GestorArchivo {
+
+    public static final String EXTENSION = ".asm";
 
     private final ProcesadorInstrucciones procesador;
 
@@ -27,46 +36,112 @@ public class GestorArchivo {
         this.procesador = procesador;
     }
 
+    // ------------------------------------------------------------------
+    // Seleccion de archivos
+    // ------------------------------------------------------------------
+
     /**
-     * Abre la ventana de seleccion de archivos, filtrada para mostrar solo archivos .asm. Devuelve el File elegido, o null si el
-     * usuario cancelo el dialogo.
-     * @param componentePadre componente sobre el cual centrar el diálogo
+     * Abre la ventana de seleccion de archivos (filtrada a .asm) permitiendo elegir VARIOS a la vez
+     * (con Ctrl o Shift). Devuelve la lista elegida, o una lista vacia si el usuario cancelo.
+     * @param componentePadre componente sobre el cual centrar el dialogo
      */
-    public File seleccionarArchivo(Component componentePadre) {
-        JFileChooser selector = new JFileChooser();
-        selector.setDialogTitle("Seleccione el archivo ensamblador (*.asm)");
+    public List<File> seleccionarArchivos(Component componentePadre) {
+        JFileChooser selector = new JFileChooser(new File(System.getProperty("user.dir")));
+        selector.setDialogTitle("Seleccione uno o varios archivos ensamblador (*.asm)");
         selector.setFileFilter(new FileNameExtensionFilter("Archivos ensamblador (*.asm)", "asm"));
         selector.setAcceptAllFileFilterUsed(false);
+        selector.setMultiSelectionEnabled(true);
 
         int opcion = selector.showOpenDialog(componentePadre);
-        if (opcion == JFileChooser.APPROVE_OPTION) {
-            return selector.getSelectedFile();
+        if (opcion != JFileChooser.APPROVE_OPTION) {
+            return Collections.emptyList(); // el usuario cancelo
         }
-        return null; // el usuario cancelo
+        File[] elegidos = selector.getSelectedFiles();
+        if (elegidos.length == 0 && selector.getSelectedFile() != null) {
+            elegidos = new File[]{selector.getSelectedFile()};
+        }
+        return Arrays.asList(elegidos);
     }
 
-    /** Lee todas las lineas de texto de un archivo. */
+    /** Lee todas las lineas de texto de un archivo (UTF-8; si no lo es, se intenta con ISO-8859-1). */
     public List<String> leerLineas(File archivo) throws IOException {
-        return Files.readAllLines(archivo.toPath());
+        try {
+            return Files.readAllLines(archivo.toPath(), StandardCharsets.UTF_8);
+        } catch (MalformedInputException ex) {
+            // archivos guardados con acentos en ANSI (Bloc de notas antiguo)
+            return Files.readAllLines(archivo.toPath(), StandardCharsets.ISO_8859_1);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Carga al disco
+    // ------------------------------------------------------------------
+
+    /**
+     * Valida cada archivo por separado y guarda en el disco los que son validos.
+     * Un archivo invalido NO detiene la carga de los demas.
+     * @return un resultado por archivo, en el mismo orden recibido.
+     */
+    public List<ResultadoCargaArchivo> cargarEnDisco(List<File> archivos, Disco disco) {
+        List<ResultadoCargaArchivo> resultados = new ArrayList<>();
+        for (File archivo : archivos) {
+            resultados.add(cargarEnDisco(archivo, disco));
+        }
+        return resultados;
+    }
+
+    /** Valida un archivo y, si es valido, lo guarda en el disco. */
+    public ResultadoCargaArchivo cargarEnDisco(File archivo, Disco disco) {
+        String nombre = archivo.getName();
+
+        // 1) Verificaciones del archivo en si
+        if (!nombre.toLowerCase().endsWith(EXTENSION)) {
+            return ResultadoCargaArchivo.rechazado(nombre, Collections.singletonList(
+                    nombre + ": la extensión debe ser " + EXTENSION + "."));
+        }
+        if (!archivo.isFile() || !archivo.canRead()) {
+            return ResultadoCargaArchivo.rechazado(nombre, Collections.singletonList(
+                    nombre + ": el archivo no existe o no se puede leer."));
+        }
+
+        List<String> lineas;
+        try {
+            lineas = leerLineas(archivo);
+        } catch (IOException ex) {
+            return ResultadoCargaArchivo.rechazado(nombre, Collections.singletonList(
+                    nombre + ": error al leer el archivo (" + ex.getMessage() + ")."));
+        }
+
+        // 2) Validacion del programa
+        ResultadoAnalisis analisis = procesador.analizarPrograma(lineas);
+        if (!analisis.esValido()) {
+            return ResultadoCargaArchivo.rechazado(nombre, analisis.getTodosLosErrores(nombre));
+        }
+
+        // 3) Escritura en el disco: una instruccion normalizada por posicion
+        List<String> contenido = new ArrayList<>();
+        for (Instruccion instruccion : analisis.getInstrucciones()) {
+            contenido.add(instruccion.getTextoNormalizado());
+        }
+        try {
+            EntradaIndice entrada = disco.guardarArchivo(nombre, contenido);
+            return ResultadoCargaArchivo.cargado(nombre, entrada, analisis.getInstrucciones(),
+                    analisis.getAdvertencias(nombre));
+        } catch (IllegalStateException ex) {
+            return ResultadoCargaArchivo.rechazado(nombre, Collections.singletonList(nombre + ": " + ex.getMessage()));
+        }
     }
 
     /**
-     * Flujo completo: abre el selector de archivos, lee el .asm elegido y lo valida con ProcesadorInstrucciones.
-     * @return la lista de Instruccion resultantes, o null si el usuario cancelo la seleccion del archivo.
-     * @throws IOException si ocurre un error leyendo el archivo.
+     * Lee un programa que ya esta en el disco y lo vuelve a analizar, para cargarlo en memoria
+     * a partir del disco (no del archivo original).
      */
-    public List<Instruccion> cargarYProcesar(Component componentePadre) throws IOException {
-        File archivo = seleccionarArchivo(componentePadre);
-        if (archivo == null) {
-            return null; // cancelado por el usuario
+    public List<Instruccion> leerProgramaDelDisco(String nombre, Disco disco) {
+        ResultadoAnalisis analisis = procesador.analizarPrograma(disco.leerArchivo(nombre));
+        if (!analisis.esValido()) {
+            throw new IllegalStateException("El programa \"" + nombre + "\" del disco no es válido: "
+                    + analisis.getTodosLosErrores(nombre).get(0));
         }
-        List<String> lineas = leerLineas(archivo);
-        return procesador.procesarPrograma(lineas);
-    }
-
-    /** Variante directa: procesa un archivo ya conocido (sin abrir la ventanita) */
-    public List<Instruccion> cargarYProcesar(File archivo) throws IOException {
-        List<String> lineas = leerLineas(archivo);
-        return procesador.procesarPrograma(lineas);
+        return analisis.getInstrucciones();
     }
 }

@@ -3,6 +3,8 @@ package minipc.gui;
 import minipc.BCP;
 import minipc.CPU;
 import minipc.CargadorMemoria;
+import minipc.Disco;
+import minipc.EntradaIndice;
 import minipc.EstadoProceso;
 import minipc.GestorArchivo;
 import minipc.Instruccion;
@@ -10,6 +12,7 @@ import minipc.Memoria;
 import minipc.ProcesadorInstrucciones;
 import minipc.Registro;
 import minipc.ResultadoAnalisis;
+import minipc.ResultadoCargaArchivo;
 import minipc.config.Configuracion;
 
 import javax.swing.BorderFactory;
@@ -34,7 +37,7 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.io.File;
-import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -43,7 +46,9 @@ import java.util.List;
  * Flujo de uso:
  *   1) El usuario pulsa "Cargar archivo": se abre la ventana de configuracion de memoria
  *      (valores de config.properties o, si no existe, los valores por defecto).
- *   2) Se elige un .asm, se valida, se carga en Memoria y se crea el BCP.
+ *   2) Se eligen uno o varios .asm. Cada uno se valida por separado: los validos se guardan en el
+ *      Disco (y se registran en su indice); los invalidos se rechazan con su lista de errores.
+ *      El primer programa cargado se copia DEL DISCO a la Memoria y se crea su BCP.
  *   3) "Paso a paso" ejecuta una instrucción por clic.
  *      "Ejecutar" corre el programa completo, animando cada paso.
  *   4) "Limpiar" reinicia todo para cargar un nuevo programa.
@@ -53,6 +58,10 @@ public class VentanaMiniPC extends JFrame {
     /** Color de fondo para las posiciones de memoria que ocupa el BCP (Kernel). */
     private static final Color COLOR_FILA_BCP = new Color(0xFF, 0xF3, 0xDC);
 
+    /** Colores de las zonas del disco. */
+    private static final Color COLOR_DISCO_INDICE = new Color(0xE3, 0xF2, 0xFD);
+    private static final Color COLOR_DISCO_VIRTUAL = new Color(0xF1, 0xE8, 0xFB);
+
     // ---- Backend ----
     private final GestorArchivo gestorArchivo = new GestorArchivo();
     private final ProcesadorInstrucciones procesador = new ProcesadorInstrucciones();
@@ -60,7 +69,11 @@ public class VentanaMiniPC extends JFrame {
 
     private List<Instruccion> instrucciones;
     private Memoria memoria;
+    private Disco disco;
     private BCP bcp;
+
+    /** Nombre del programa (en disco) que esta cargado en memoria. */
+    private String programaEnMemoria;
     private CPU cpu;
 
     /** Configuracion de memoria/disco vigente (leida de config.properties o por defecto). */
@@ -80,8 +93,11 @@ public class VentanaMiniPC extends JFrame {
 
     private DefaultTableModel modeloInstrucciones;
     private DefaultTableModel modeloMemoria;
+    private DefaultTableModel modeloDisco;
     private JTable tablaInstrucciones;
     private JTable tablaMemoria;
+    private JTable tablaDisco;
+    private JLabel leyendaDisco;
 
     // Etiquetas del panel "BCP actual"
     private JLabel valorId;
@@ -101,7 +117,9 @@ public class VentanaMiniPC extends JFrame {
 
     public VentanaMiniPC() {
         super("Gestor de Procesos - Proyecto 1");
+        disco = crearDiscoVacio();
         construirInterfaz();
+        cargarTablaDisco();
         actualizarEstadoBotones();
     }
 
@@ -117,8 +135,8 @@ public class VentanaMiniPC extends JFrame {
         add(construirBarraSuperior(), BorderLayout.NORTH);
         add(construirContenidoCentral(), BorderLayout.CENTER);
 
-        setMinimumSize(new Dimension(1080, 620));
-        setSize(1180, 680);
+        setMinimumSize(new Dimension(1240, 640));
+        setSize(1420, 720);
         setLocationRelativeTo(null);
     }
 
@@ -150,8 +168,8 @@ public class VentanaMiniPC extends JFrame {
 
         JPanel filaCarga = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         filaCarga.setBackground(EstiloUI.FONDO);
-        botonCargarArchivo = EstiloUI.crearBotonSecundario("Cargar archivo (.asm)");
-        botonCargarArchivo.addActionListener(e -> cargarArchivo());
+        botonCargarArchivo = EstiloUI.crearBotonSecundario("Cargar archivos (.asm)");
+        botonCargarArchivo.addActionListener(e -> cargarArchivos());
         filaCarga.add(botonCargarArchivo);
 
         filaSuperior.add(filaAcciones, BorderLayout.WEST);
@@ -191,7 +209,7 @@ public class VentanaMiniPC extends JFrame {
         return contenedor;
     }
 
-    /** Zona central: BCP actual | tabla de instrucciones | tabla de memoria. */
+    /** Zona central: BCP actual | tabla de instrucciones | tabla de memoria | tabla de disco. */
     private JPanel construirContenidoCentral() {
         JPanel contenedor = new JPanel(new GridBagLayout());
         contenedor.setBackground(EstiloUI.FONDO);
@@ -208,13 +226,17 @@ public class VentanaMiniPC extends JFrame {
         contenedor.add(construirPanelBcp(), gbc);
 
         gbc.gridx = 1;
-        gbc.weightx = 0.34;
+        gbc.weightx = 0.28;
         contenedor.add(construirPanelInstrucciones(), gbc);
 
         gbc.gridx = 2;
-        gbc.weightx = 0.38;
-        gbc.insets = new Insets(0, 0, 0, 0);
+        gbc.weightx = 0.36;
         contenedor.add(construirPanelMemoria(), gbc);
+
+        gbc.gridx = 3;
+        gbc.weightx = 0.36;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        contenedor.add(construirPanelDisco(), gbc);
 
         return contenedor;
     }
@@ -255,8 +277,7 @@ public class VentanaMiniPC extends JFrame {
     private void aplicarRendererMemoria() {
         javax.swing.table.DefaultTableCellRenderer renderer = new javax.swing.table.DefaultTableCellRenderer() {
             @Override
-            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
-                                                           boolean hasFocus, int row, int column) {
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
                 Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
                 if (!isSelected) {
                     if (esFilaDelBcp(row)) {
@@ -281,6 +302,71 @@ public class VentanaMiniPC extends JFrame {
         }
         int inicio = bcp.getPosicionBCP();
         return posicion >= inicio && posicion < inicio + BCP.TAMANO_EN_MEMORIA;
+    }
+
+    /** Tabla del disco: posicion y valor, con un color por zona (indice, archivos, memoria virtual). */
+    private JPanel construirPanelDisco() {
+        modeloDisco = new DefaultTableModel(new Object[]{"Posición", "Valor en disco"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        tablaDisco = new JTable(modeloDisco);
+        EstiloUI.aplicarEstiloTabla(tablaDisco);
+        tablaDisco.getColumnModel().getColumn(0).setMaxWidth(90);
+        aplicarRendererDisco();
+
+        JPanel tarjeta = envolverEnTarjeta("Disco", tablaDisco);
+
+        leyendaDisco = EstiloUI.crearEtiquetaSecundaria("");
+        leyendaDisco.setBorder(BorderFactory.createEmptyBorder(8, 2, 0, 2));
+        tarjeta.add(leyendaDisco, BorderLayout.SOUTH);
+        return tarjeta;
+    }
+
+    private void aplicarRendererDisco() {
+        javax.swing.table.DefaultTableCellRenderer renderer = new javax.swing.table.DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                if (!isSelected) {
+                    if (disco != null && disco.esIndice(row)) {
+                        c.setBackground(COLOR_DISCO_INDICE);
+                    } else if (disco != null && disco.esMemoriaVirtual(row)) {
+                        c.setBackground(COLOR_DISCO_VIRTUAL);
+                    } else {
+                        c.setBackground(row % 2 == 0 ? EstiloUI.PANEL : EstiloUI.FONDO);
+                    }
+                }
+                setToolTipText(descripcionZonaDisco(row));
+                setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 12));
+                return c;
+            }
+        };
+        for (int i = 0; i < tablaDisco.getColumnCount(); i++) {
+            tablaDisco.getColumnModel().getColumn(i).setCellRenderer(renderer);
+        }
+    }
+
+    /** Texto del tooltip de una fila del disco: zona y, si aplica, a que archivo pertenece. */
+    private String descripcionZonaDisco(int posicion) {
+        if (disco == null) {
+            return null;
+        }
+        if (disco.esIndice(posicion)) {
+            EntradaIndice entrada = EntradaIndice.desdeTexto(posicion, disco.leer(posicion));
+            return entrada == null ? "Índice de archivos (entrada libre)" : "Índice: " + entrada.getNombre() + " → posiciones " + entrada.getInicio() + "-" + entrada.getFin();
+        }
+        if (disco.esMemoriaVirtual(posicion)) {
+            return "Memoria virtual";
+        }
+        for (EntradaIndice entrada : disco.listarArchivos()) {
+            if (posicion >= entrada.getInicio() && posicion <= entrada.getFin()) {
+                return entrada.getNombre() + " (línea " + (posicion - entrada.getInicio() + 1) + " de " + entrada.getTamano() + ")";
+            }
+        }
+        return "Zona de archivos (libre)";
     }
 
     /** Panel derecho tipo "ficha" con los campos del BCP actual. */
@@ -399,9 +485,7 @@ public class VentanaMiniPC extends JFrame {
     private JPanel crearTarjetaBase() {
         JPanel tarjeta = new JPanel();
         tarjeta.setBackground(EstiloUI.PANEL);
-        tarjeta.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(EstiloUI.BORDE),
-                BorderFactory.createEmptyBorder(14, 14, 14, 14)));
+        tarjeta.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(EstiloUI.BORDE), BorderFactory.createEmptyBorder(14, 14, 14, 14)));
         return tarjeta;
     }
 
@@ -409,75 +493,121 @@ public class VentanaMiniPC extends JFrame {
     // Acciones
     // ==================================================================
 
-    private void cargarArchivo() {
-        // 1) Ventana de configuracion de memoria (solo editable si no hay programas cargados)
-        Configuracion elegida = new DialogoConfiguracion(this, configuracion, memoria == null).mostrar();
+    /**
+     * Carga uno o varios archivos .asm:
+     *   1) Ventana de configuracion (editable solo si no hay nada cargado).
+     *   2) Seleccion multiple de archivos.
+     *   3) Cada archivo se valida por separado; los validos se guardan en el disco.
+     *   4) Resumen: cuales se cargaron (y donde) y cuales se rechazaron (con sus errores).
+     *   5) Si no hay un programa en memoria, se copia el primero cargado DEL DISCO a la memoria.
+     */
+    private void cargarArchivos() {
+        // 1) Configuracion de memoria
+        boolean sinNadaCargado = memoria == null && disco.estaVacio();
+        Configuracion elegida = new DialogoConfiguracion(this, configuracion, sinNadaCargado).mostrar();
         if (elegida == null) {
             return; // el usuario cancelo la configuracion
         }
         configuracion = elegida;
+        if (sinNadaCargado) {
+            disco = crearDiscoVacio(); // el disco toma el tamano configurado
+            cargarTablaDisco();
+        }
         actualizarEtiquetaDivisionMemoria();
+        // 2) Seleccion de archivos
+        List<File> archivos = gestorArchivo.seleccionarArchivos(this);
+        if (archivos.isEmpty()) {
+            return; // el usuario cancelo
+        }
+        // 3) Validacion y escritura en el disco (cada archivo por separado)
+        List<ResultadoCargaArchivo> resultados = gestorArchivo.cargarEnDisco(archivos, disco);
+        cargarTablaDisco();
+        // 4) Si no hay programa en memoria, se carga el primero que entro al disco
+        String mensajeMemoria = null;
+        for (ResultadoCargaArchivo resultado : resultados) {
+            if (resultado.isCargado() && memoria == null) {
+                mensajeMemoria = cargarProgramaEnMemoria(resultado.getNombreArchivo());
+                break;
+            }
+        }
+        // 5) Resumen para el usuario
+        mostrarResumenDeCarga(resultados, mensajeMemoria);
+        actualizarEstadoBotones();
+    }
 
-        // 2) Seleccion, validacion y carga del programa
+    /**
+     * Copia un programa del disco a la memoria principal y crea su BCP.
+     * @return texto para el resumen (exito o motivo del error).
+     */
+    private String cargarProgramaEnMemoria(String nombre) {
         try {
-            File archivo = gestorArchivo.seleccionarArchivo(this);
-            if (archivo == null) {
-                return; // el usuario canceló
-            }
-
-            List<String> lineas = gestorArchivo.leerLineas(archivo);
-            ResultadoAnalisis analisis = procesador.analizarPrograma(lineas);
-
-            if (!analisis.esValido()) {
-                mostrarErroresDeValidacion(archivo.getName(), analisis);
-                return;
-            }
-            if (analisis.tieneAdvertencias() && !confirmarAdvertencias(archivo.getName(), analisis)) {
-                return;
-            }
-            List<Instruccion> nuevasInstrucciones = analisis.getInstrucciones();
+            List<Instruccion> nuevasInstrucciones = gestorArchivo.leerProgramaDelDisco(nombre, disco);
 
             Memoria nuevaMemoria = new Memoria(configuracion.getMemoriaPrincipal());
             BCP nuevoBcp = cargadorMemoria.cargar(nuevasInstrucciones, nuevaMemoria, 1);
             CPU nuevaCpu = new CPU(nuevaMemoria);
 
-            // si todo salió bien, recién aquí se reemplaza el estado actual
+            // si todo salio bien, recien aqui se reemplaza el estado actual
             this.instrucciones = nuevasInstrucciones;
             this.memoria = nuevaMemoria;
             this.bcp = nuevoBcp;
             this.cpu = nuevaCpu;
+            this.programaEnMemoria = nombre;
 
             cargarTablaInstrucciones();
             cargarTablaMemoria();
             actualizarPanelBcp();
             resaltarFilaActual();
-            actualizarEtiquetaDivisionMemoria();
-
-            actualizarEstadoBotones();
-
-        } catch (IOException ex) {
-            JOptionPane.showMessageDialog(this, "Error leyendo el archivo:\n" + ex.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
-        } catch (IllegalArgumentException ex) {
-            JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            return "\"" + nombre + "\" se copió del disco a la memoria (posiciones " + nuevoBcp.getLimiteInferior() + "-" + nuevoBcp.getLimiteSuperior() + ") y está listo para ejecutarse.";
+        } catch (RuntimeException ex) {
+            return "\"" + nombre + "\" quedó en el disco, pero no se pudo cargar en memoria: " + ex.getMessage();
         }
     }
 
-    /** Muestra todos los errores del archivo (generales y por linea). */
-    private void mostrarErroresDeValidacion(String nombreArchivo, ResultadoAnalisis analisis) {
-        List<String> errores = analisis.getTodosLosErrores();
-        String texto = "El archivo \"" + nombreArchivo + "\" tiene " + errores.size() + " error(es):\n\n• "
-                + String.join("\n• ", errores);
-        JOptionPane.showMessageDialog(this, crearAreaDeMensaje(texto), "Programa inválido", JOptionPane.WARNING_MESSAGE);
-    }
+    /** Muestra que archivos se cargaron (y en que posiciones del disco) y cuales se rechazaron. */
+    private void mostrarResumenDeCarga(List<ResultadoCargaArchivo> resultados, String mensajeMemoria) {
+        List<String> cargados = new ArrayList<>();
+        List<String> rechazados = new ArrayList<>();
+        List<String> advertencias = new ArrayList<>();
+        for (ResultadoCargaArchivo resultado : resultados) {
+            if (resultado.isCargado()) {
+                EntradaIndice entrada = resultado.getEntrada();
+                cargados.add(resultado.getNombreArchivo() + " → disco, posiciones " + entrada.getInicio() + "-" + entrada.getFin() + " (índice en la posición " + entrada.getPosicionIndice() + ")");
+                advertencias.addAll(resultado.getAdvertencias());
+            } else {
+                rechazados.add(resultado.getNombreArchivo() + " (" + resultado.getErrores().size() + " error(es)):");
+                for (String error : resultado.getErrores()) {
+                    rechazados.add("    – " + error);
+                }
+            }
+        }
 
-    /** Muestra las advertencias y pregunta si se carga el programa de todas formas. */
-    private boolean confirmarAdvertencias(String nombreArchivo, ResultadoAnalisis analisis) {
-        String texto = "El archivo \"" + nombreArchivo + "\" es válido, pero tiene advertencias:\n\n• "
-                + String.join("\n• ", analisis.getAdvertencias()) + "\n\n¿Desea cargarlo de todas formas?";
-        int opcion = JOptionPane.showConfirmDialog(this, crearAreaDeMensaje(texto), "Advertencias",
-                JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
-        return opcion == JOptionPane.YES_OPTION;
+        StringBuilder texto = new StringBuilder();
+        texto.append("Archivos cargados en el disco: ").append(cargados.size()).append(" de ").append(resultados.size()).append("\n");
+        for (String linea : cargados) {
+            texto.append("  ✔ ").append(linea).append("\n");
+        }
+        if (!rechazados.isEmpty()) {
+            texto.append("\nArchivos rechazados:\n");
+            for (String linea : rechazados) {
+                texto.append(linea.startsWith("    ") ? linea : "  ✘ " + linea).append("\n");
+            }
+        }
+        if (!advertencias.isEmpty()) {
+            texto.append("\nAdvertencias:\n");
+            for (String advertencia : advertencias) {
+                texto.append("  • ").append(advertencia).append("\n");
+            }
+        }
+        if (mensajeMemoria != null) {
+            texto.append("\n").append(mensajeMemoria).append("\n");
+        } else if (!cargados.isEmpty() && programaEnMemoria != null) {
+            texto.append("\nEn memoria continúa \"").append(programaEnMemoria).append("\"; los programas nuevos quedan guardados en el disco.\n");
+        }
+
+        int tipo = rechazados.isEmpty() ? JOptionPane.INFORMATION_MESSAGE
+                : (cargados.isEmpty() ? JOptionPane.ERROR_MESSAGE : JOptionPane.WARNING_MESSAGE);
+        JOptionPane.showMessageDialog(this, crearAreaDeMensaje(texto.toString().trim()), "Resultado de la carga", tipo);
     }
 
     /** Texto con ajuste de linea y barra de desplazamiento, para mensajes largos. */
@@ -490,7 +620,7 @@ public class VentanaMiniPC extends JFrame {
         area.setBackground(EstiloUI.PANEL);
         area.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
         JScrollPane scroll = new JScrollPane(area);
-        scroll.setPreferredSize(new Dimension(520, Math.min(320, 70 + 22 * texto.split("\n").length)));
+        scroll.setPreferredSize(new Dimension(640, Math.min(380, 70 + 22 * texto.split("\n").length)));
         scroll.setBorder(BorderFactory.createLineBorder(EstiloUI.BORDE));
         return scroll;
     }
@@ -500,8 +630,7 @@ public class VentanaMiniPC extends JFrame {
             return;
         }
         if (!bcp.tieneInstruccionesPendientes()) {
-            JOptionPane.showMessageDialog(this, "El programa ya finalizó.", "Fin de la ejecución",
-                    JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "El programa ya finalizó.", "Fin de la ejecución", JOptionPane.INFORMATION_MESSAGE);
             actualizarEstadoBotones();
             return;
         }
@@ -517,8 +646,7 @@ public class VentanaMiniPC extends JFrame {
 
         actualizarEstadoBotones();
         if (!bcp.tieneInstruccionesPendientes()) {
-            JOptionPane.showMessageDialog(this, "Programa finalizado.\nAC final = " + bcp.getAc(),
-                    "Ejecución completa", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Programa finalizado.\nAC final = " + bcp.getAc(), "Ejecución completa", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
@@ -527,8 +655,7 @@ public class VentanaMiniPC extends JFrame {
             return;
         }
         if (!bcp.tieneInstruccionesPendientes()) {
-            JOptionPane.showMessageDialog(this, "El programa ya finalizó.", "Fin de la ejecución",
-                    JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "El programa ya finalizó.", "Fin de la ejecución", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
 
@@ -553,8 +680,7 @@ public class VentanaMiniPC extends JFrame {
                 actualizarBcpEnTablaMemoria();
                 fijarBotonesDurante(true);
                 actualizarEstadoBotones();
-                JOptionPane.showMessageDialog(this, "Programa finalizado.\nAC final = " + bcp.getAc(),
-                        "Ejecución completa", JOptionPane.INFORMATION_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Programa finalizado.\nAC final = " + bcp.getAc(), "Ejecución completa", JOptionPane.INFORMATION_MESSAGE);
             }
         });
         temporizadorEjecucion.start();
@@ -573,9 +699,12 @@ public class VentanaMiniPC extends JFrame {
         memoria = null;
         bcp = null;
         cpu = null;
+        programaEnMemoria = null;
+        disco = crearDiscoVacio();
 
         modeloInstrucciones.setRowCount(0);
         modeloMemoria.setRowCount(0);
+        cargarTablaDisco();
         limpiarPanelBcp();
 
         actualizarEtiquetaDivisionMemoria();
@@ -600,6 +729,35 @@ public class VentanaMiniPC extends JFrame {
             modeloMemoria.addRow(new Object[]{posicion, memoria.leer(posicion)});
         }
         actualizarBcpEnTablaMemoria();
+    }
+
+    /** Disco vacio con el tamano de la configuracion vigente. */
+    private Disco crearDiscoVacio() {
+        return new Disco(configuracion.getMemoriaSecundaria(), configuracion.getTamanoIndiceDisco(),
+                configuracion.getMemoriaVirtual());
+    }
+
+    /** Vuelve a llenar la tabla del disco con lo que hay en cada posicion, y actualiza la leyenda de zonas. */
+    private void cargarTablaDisco() {
+        modeloDisco.setRowCount(0);
+        for (int posicion = 0; posicion < disco.getTamanoTotal(); posicion++) {
+            modeloDisco.addRow(new Object[]{posicion, disco.leer(posicion)});
+        }
+        leyendaDisco.setText("<html>"
+                + cuadroColor(COLOR_DISCO_INDICE) + " Índice &nbsp;&nbsp;"
+                + cuadroColor(EstiloUI.FONDO) + " Archivos &nbsp;&nbsp;"
+                + cuadroColor(COLOR_DISCO_VIRTUAL) + " Memoria virtual<br>"
+                + disco.getCantidadArchivos() + " de " + disco.getTamanoIndice() + " archivos &nbsp;·&nbsp; "
+                + disco.getEspacioLibreArchivos() + " posiciones libres</html>");
+        leyendaDisco.setToolTipText("Índice 0-" + (disco.getTamanoIndice() - 1) + ", archivos "
+                + disco.getInicioArchivos() + "-" + disco.getFinArchivos() + ", memoria virtual "
+                + disco.getInicioMemoriaVirtual() + "-" + (disco.getTamanoTotal() - 1));
+    }
+
+    /** Cuadrito de color para la leyenda (HTML). */
+    private String cuadroColor(Color color) {
+        return String.format("<span style='background-color:#%02x%02x%02x;'>&nbsp;&nbsp;&nbsp;&nbsp;</span>",
+                color.getRed(), color.getGreen(), color.getBlue());
     }
 
     /**
@@ -701,8 +859,7 @@ public class VentanaMiniPC extends JFrame {
         etiquetaMemoriaTotal.setText("Memoria: " + configuracion.getMemoriaPrincipal());
         etiquetaSO.setText("SO: " + configuracion.getTamanoAreaSO() + " (" + Memoria.PORCENTAJE_KERNEL + "%)");
         etiquetaUsuario.setText("Usuario: " + configuracion.getTamanoAreaUsuario() + " (" + (100 - Memoria.PORCENTAJE_KERNEL) + "%)");
-        etiquetaDisco.setText("Disco: " + configuracion.getMemoriaSecundaria()
-                + "  (memoria virtual fija: " + configuracion.getMemoriaVirtual() + ")");
+        etiquetaDisco.setText("Disco: " + configuracion.getMemoriaSecundaria() + "  (índice: " + configuracion.getTamanoIndiceDisco() + ", memoria virtual fija: " + configuracion.getMemoriaVirtual() + ")");
     }
 
     private void actualizarEstadoBotones() {
@@ -711,7 +868,7 @@ public class VentanaMiniPC extends JFrame {
 
         botonEjecutar.setEnabled(puedeAvanzar);
         botonPasoAPaso.setEnabled(puedeAvanzar);
-        botonLimpiar.setEnabled(hayPrograma);
+        botonLimpiar.setEnabled(hayPrograma || (disco != null && !disco.estaVacio()));
         botonCargarArchivo.setEnabled(true);
     }
 

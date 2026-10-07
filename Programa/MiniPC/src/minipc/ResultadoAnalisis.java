@@ -70,4 +70,30 @@ public class ResultadoAnalisis {
         }
         return errores;
     }
+
+    /**
+     * Igual que {@link #getTodosLosErrores()}, pero cada mensaje indica el archivo:
+     * "prog1.asm, línea 4: ..." para errores de una linea y "prog1.asm: ..." para errores generales.
+     */
+    public List<String> getTodosLosErrores(String nombreArchivo) {
+        List<String> errores = new ArrayList<>();
+        for (String error : erroresGenerales) {
+            errores.add(nombreArchivo + ": " + error);
+        }
+        for (Instruccion instruccion : instrucciones) {
+            if (!instruccion.isValida()) {
+                errores.add(nombreArchivo + ", línea " + instruccion.getNumeroLinea() + ": " + instruccion.getMensajeError());
+            }
+        }
+        return errores;
+    }
+
+    /** Las advertencias, cada una precedida por el nombre del archivo. */
+    public List<String> getAdvertencias(String nombreArchivo) {
+        List<String> resultado = new ArrayList<>();
+        for (String advertencia : advertencias) {
+            resultado.add(nombreArchivo + ": " + advertencia);
+        }
+        return resultado;
+    }
 }
