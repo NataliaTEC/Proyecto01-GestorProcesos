@@ -214,14 +214,13 @@ public class CPU {
                     procesoActual.setEstado(EstadoProceso.TERMINADO); // INT 20H
                     return false;
                 }
-                throw new UnsupportedOperationException("INT " + instruccion.getInterrupcion().getCodigo()
-                        + " está validada, pero su ejecución (pantalla, teclado y archivos) se implementa en la Fase 7.");
+                throw new UnsupportedOperationException("INT " + instruccion.getInterrupcion().getCodigo() + " está validada, pero su ejecución (pantalla, teclado y archivos).");
 
             case PARAM:
             case PUSH:
             case POP:
                 throw new UnsupportedOperationException(instruccion.getOperador()
-                        + " está validada, pero su ejecución (pila del proceso) se implementa en la Fase 6.");
+                        + " está validada, pero su ejecución (pila del proceso).");
 
             default:
                 throw new IllegalStateException("Operador no soportado: " + instruccion.getOperador());
