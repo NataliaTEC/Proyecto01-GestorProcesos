@@ -1,6 +1,8 @@
-package minipc;
+package minipc.hardware;
 
+import minipc.ensamblador.Instruccion;
 import java.util.Arrays;
+import minipc.so.BCP;
 
 /**
  * Representa la memoria principal de la Mini PC.

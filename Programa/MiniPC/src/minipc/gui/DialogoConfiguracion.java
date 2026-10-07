@@ -1,6 +1,6 @@
 package minipc.gui;
 
-import minipc.BCP;
+import minipc.so.BCP;
 import minipc.config.Configuracion;
 
 import javax.swing.BorderFactory;

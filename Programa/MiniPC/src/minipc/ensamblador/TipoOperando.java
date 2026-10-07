@@ -1,4 +1,6 @@
-package minipc;
+package minipc.ensamblador;
+
+import minipc.ensamblador.Registro;
 
 /**
  * Tipos de operando que puede recibir una instruccion del mini ensamblador.

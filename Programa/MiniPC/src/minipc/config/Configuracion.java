@@ -1,7 +1,7 @@
 package minipc.config;
 
-import minipc.BCP;
-import minipc.Memoria;
+import minipc.so.BCP;
+import minipc.hardware.Memoria;
 
 import java.io.IOException;
 import java.io.InputStream;

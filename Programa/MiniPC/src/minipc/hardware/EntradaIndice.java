@@ -1,4 +1,4 @@
-package minipc;
+package minipc.hardware;
 
 /**
  * Una entrada del indice de archivos del {@link Disco}.

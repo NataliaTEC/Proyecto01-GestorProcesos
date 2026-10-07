@@ -1,5 +1,6 @@
-package minipc;
+package minipc.so;
 
+import minipc.ensamblador.Registro;
 import java.util.EnumMap;
 import java.util.Map;
 

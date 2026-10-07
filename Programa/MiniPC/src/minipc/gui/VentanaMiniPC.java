@@ -1,18 +1,18 @@
 package minipc.gui;
 
-import minipc.BCP;
-import minipc.CPU;
-import minipc.CargadorMemoria;
-import minipc.Disco;
-import minipc.EntradaIndice;
-import minipc.EstadoProceso;
-import minipc.GestorArchivo;
-import minipc.Instruccion;
-import minipc.Memoria;
-import minipc.ProcesadorInstrucciones;
-import minipc.Registro;
-import minipc.ResultadoAnalisis;
-import minipc.ResultadoCargaArchivo;
+import minipc.so.BCP;
+import minipc.hardware.CPU;
+import minipc.so.CargadorMemoria;
+import minipc.hardware.Disco;
+import minipc.hardware.EntradaIndice;
+import minipc.so.EstadoProceso;
+import minipc.so.GestorArchivo;
+import minipc.ensamblador.Instruccion;
+import minipc.hardware.Memoria;
+import minipc.ensamblador.ProcesadorInstrucciones;
+import minipc.ensamblador.Registro;
+import minipc.ensamblador.ResultadoAnalisis;
+import minipc.so.ResultadoCargaArchivo;
 import minipc.config.Configuracion;
 
 import javax.swing.BorderFactory;

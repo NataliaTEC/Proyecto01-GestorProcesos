@@ -1,5 +1,10 @@
-package minipc;
+package minipc.so;
 
+import minipc.hardware.EntradaIndice;
+import minipc.hardware.Disco;
+import minipc.ensamblador.ResultadoAnalisis;
+import minipc.ensamblador.ProcesadorInstrucciones;
+import minipc.ensamblador.Instruccion;
 import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.Component;

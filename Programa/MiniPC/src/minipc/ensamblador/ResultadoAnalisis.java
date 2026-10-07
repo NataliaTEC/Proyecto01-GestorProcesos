@@ -1,5 +1,6 @@
-package minipc;
+package minipc.ensamblador;
 
+import minipc.ensamblador.Instruccion;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

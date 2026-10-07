@@ -1,4 +1,4 @@
-package minipc;
+package minipc.hardware;
 
 import java.util.ArrayList;
 import java.util.Arrays;

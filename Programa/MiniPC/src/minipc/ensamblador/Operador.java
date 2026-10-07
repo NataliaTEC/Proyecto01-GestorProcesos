@@ -1,14 +1,13 @@
-package minipc;
+package minipc.ensamblador;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-
-import static minipc.TipoOperando.DESPLAZAMIENTO;
-import static minipc.TipoOperando.INTERRUPCION;
-import static minipc.TipoOperando.NUMERO;
-import static minipc.TipoOperando.REGISTRO;
+import static minipc.ensamblador.TipoOperando.DESPLAZAMIENTO;
+import static minipc.ensamblador.TipoOperando.INTERRUPCION;
+import static minipc.ensamblador.TipoOperando.NUMERO;
+import static minipc.ensamblador.TipoOperando.REGISTRO;
 
 /**
  * Operadores (mnemonicos) del mini ensamblador.

@@ -1,5 +1,7 @@
-package minipc;
+package minipc.so;
 
+import minipc.hardware.EntradaIndice;
+import minipc.ensamblador.Instruccion;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

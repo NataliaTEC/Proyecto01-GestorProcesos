@@ -1,5 +1,8 @@
-package minipc;
+package minipc.so;
 
+import minipc.so.BCP;
+import minipc.hardware.Memoria;
+import minipc.ensamblador.Instruccion;
 import java.util.List;
 /**
  * Conecta las instrucciones ya validadas (por {@link ProcesadorInstrucciones}) con la {@link Memoria}: las escribe en el espacio de Usuario, en orden

@@ -1,9 +1,16 @@
-package minipc;
+package minipc.hardware;
 
+import minipc.ensamblador.ProcesadorInstrucciones;
+import minipc.ensamblador.Instruccion;
+import minipc.ensamblador.Interrupcion;
+import minipc.ensamblador.Registro;
+import minipc.ensamblador.Operador;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import minipc.so.BCP;
+import minipc.so.EstadoProceso;
 
 /**
  * Representa el procesador de la Mini PC.

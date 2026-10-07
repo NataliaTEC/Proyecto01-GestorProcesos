@@ -1,4 +1,4 @@
-package minipc;
+package minipc.ensamblador;
 
 /**
  * Codigos de interrupcion validos para la instruccion INT, con su peso (segundos de CPU).

@@ -1,5 +1,9 @@
-package minipc;
+package minipc.ensamblador;
 
+import minipc.ensamblador.Interrupcion;
+import minipc.ensamblador.TipoOperando;
+import minipc.ensamblador.Registro;
+import minipc.ensamblador.Operador;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

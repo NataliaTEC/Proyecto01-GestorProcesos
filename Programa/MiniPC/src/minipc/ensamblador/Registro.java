@@ -1,4 +1,4 @@
-package minipc;
+package minipc.ensamblador;
 
 /**
  * Registros de proposito general que pueden usarse como operandos en el mini ensamblador.
