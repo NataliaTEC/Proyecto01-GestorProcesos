@@ -21,8 +21,7 @@ public class ResultadoCargaArchivo {
     private final EntradaIndice entrada;           // null si fue rechazado
     private final List<Instruccion> instrucciones; // vacia si fue rechazado
 
-    private ResultadoCargaArchivo(String nombreArchivo, boolean cargado, List<String> errores, List<String> advertencias,
-                                  EntradaIndice entrada, List<Instruccion> instrucciones) {
+    private ResultadoCargaArchivo(String nombreArchivo, boolean cargado, List<String> errores, List<String> advertencias, EntradaIndice entrada, List<Instruccion> instrucciones) {
         this.nombreArchivo = nombreArchivo;
         this.cargado = cargado;
         this.errores = Collections.unmodifiableList(new ArrayList<>(errores));
@@ -31,8 +30,7 @@ public class ResultadoCargaArchivo {
         this.instrucciones = Collections.unmodifiableList(new ArrayList<>(instrucciones));
     }
 
-    public static ResultadoCargaArchivo cargado(String nombreArchivo, EntradaIndice entrada,
-                                                List<Instruccion> instrucciones, List<String> advertencias) {
+    public static ResultadoCargaArchivo cargado(String nombreArchivo, EntradaIndice entrada, List<Instruccion> instrucciones, List<String> advertencias) {
         return new ResultadoCargaArchivo(nombreArchivo, true, Collections.emptyList(), advertencias, entrada, instrucciones);
     }
 

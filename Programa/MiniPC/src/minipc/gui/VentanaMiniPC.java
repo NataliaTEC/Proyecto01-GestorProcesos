@@ -44,8 +44,8 @@ import java.util.List;
  * Ventana principal (100% gráfica) de la Mini PC.
  *
  * Flujo de uso:
- *   1) El usuario pulsa "Cargar archivo": se abre la ventana de configuracion de memoria
- *      (valores de config.properties o, si no existe, los valores por defecto).
+ *   1) El usuario pulsa "Cargar archivos". La primera vez (o despues de "Limpiar") se abre la
+ *      ventana de configuracion de memoria; las siguientes veces se va directo a elegir archivos.
  *   2) Se eligen uno o varios .asm. Cada uno se valida por separado: los validos se guardan en el
  *      Disco (y se registran en su indice); los invalidos se rechazan con su lista de errores.
  *      El primer programa cargado se copia DEL DISCO a la Memoria y se crea su BCP.
@@ -495,33 +495,38 @@ public class VentanaMiniPC extends JFrame {
 
     /**
      * Carga uno o varios archivos .asm:
-     *   1) Ventana de configuracion (editable solo si no hay nada cargado).
+     *   1) Ventana de configuracion: solo si no hay nada cargado (primera vez o despues de "Limpiar").
      *   2) Seleccion multiple de archivos.
      *   3) Cada archivo se valida por separado; los validos se guardan en el disco.
      *   4) Resumen: cuales se cargaron (y donde) y cuales se rechazaron (con sus errores).
      *   5) Si no hay un programa en memoria, se copia el primero cargado DEL DISCO a la memoria.
      */
     private void cargarArchivos() {
-        // 1) Configuracion de memoria
+        // 1) Configuracion de memoria: solo la primera vez (o despues de "Limpiar").
+        //    Si ya hay programas cargados, la configuracion no se puede cambiar, asi que
+        //    no tiene sentido mostrar la ventana: se pasa directo a elegir archivos.
         boolean sinNadaCargado = memoria == null && disco.estaVacio();
-        Configuracion elegida = new DialogoConfiguracion(this, configuracion, sinNadaCargado).mostrar();
-        if (elegida == null) {
-            return; // el usuario cancelo la configuracion
-        }
-        configuracion = elegida;
         if (sinNadaCargado) {
+            Configuracion elegida = new DialogoConfiguracion(this, configuracion, true).mostrar();
+            if (elegida == null) {
+                return; // el usuario cancelo la configuracion
+            }
+            configuracion = elegida;
             disco = crearDiscoVacio(); // el disco toma el tamano configurado
             cargarTablaDisco();
+            actualizarEtiquetaDivisionMemoria();
         }
-        actualizarEtiquetaDivisionMemoria();
+
         // 2) Seleccion de archivos
         List<File> archivos = gestorArchivo.seleccionarArchivos(this);
         if (archivos.isEmpty()) {
             return; // el usuario cancelo
         }
+
         // 3) Validacion y escritura en el disco (cada archivo por separado)
         List<ResultadoCargaArchivo> resultados = gestorArchivo.cargarEnDisco(archivos, disco);
         cargarTablaDisco();
+
         // 4) Si no hay programa en memoria, se carga el primero que entro al disco
         String mensajeMemoria = null;
         for (ResultadoCargaArchivo resultado : resultados) {
@@ -530,6 +535,7 @@ public class VentanaMiniPC extends JFrame {
                 break;
             }
         }
+
         // 5) Resumen para el usuario
         mostrarResumenDeCarga(resultados, mensajeMemoria);
         actualizarEstadoBotones();
@@ -558,7 +564,8 @@ public class VentanaMiniPC extends JFrame {
             cargarTablaMemoria();
             actualizarPanelBcp();
             resaltarFilaActual();
-            return "\"" + nombre + "\" se copió del disco a la memoria (posiciones " + nuevoBcp.getLimiteInferior() + "-" + nuevoBcp.getLimiteSuperior() + ") y está listo para ejecutarse.";
+            return "\"" + nombre + "\" se copió del disco a la memoria (posiciones " + nuevoBcp.getLimiteInferior()
+                    + "-" + nuevoBcp.getLimiteSuperior() + ") y está listo para ejecutarse.";
         } catch (RuntimeException ex) {
             return "\"" + nombre + "\" quedó en el disco, pero no se pudo cargar en memoria: " + ex.getMessage();
         }
@@ -605,8 +612,7 @@ public class VentanaMiniPC extends JFrame {
             texto.append("\nEn memoria continúa \"").append(programaEnMemoria).append("\"; los programas nuevos quedan guardados en el disco.\n");
         }
 
-        int tipo = rechazados.isEmpty() ? JOptionPane.INFORMATION_MESSAGE
-                : (cargados.isEmpty() ? JOptionPane.ERROR_MESSAGE : JOptionPane.WARNING_MESSAGE);
+        int tipo = rechazados.isEmpty() ? JOptionPane.INFORMATION_MESSAGE : (cargados.isEmpty() ? JOptionPane.ERROR_MESSAGE : JOptionPane.WARNING_MESSAGE);
         JOptionPane.showMessageDialog(this, crearAreaDeMensaje(texto.toString().trim()), "Resultado de la carga", tipo);
     }
 
@@ -743,15 +749,9 @@ public class VentanaMiniPC extends JFrame {
         for (int posicion = 0; posicion < disco.getTamanoTotal(); posicion++) {
             modeloDisco.addRow(new Object[]{posicion, disco.leer(posicion)});
         }
-        leyendaDisco.setText("<html>"
-                + cuadroColor(COLOR_DISCO_INDICE) + " Índice &nbsp;&nbsp;"
-                + cuadroColor(EstiloUI.FONDO) + " Archivos &nbsp;&nbsp;"
-                + cuadroColor(COLOR_DISCO_VIRTUAL) + " Memoria virtual<br>"
-                + disco.getCantidadArchivos() + " de " + disco.getTamanoIndice() + " archivos &nbsp;·&nbsp; "
-                + disco.getEspacioLibreArchivos() + " posiciones libres</html>");
-        leyendaDisco.setToolTipText("Índice 0-" + (disco.getTamanoIndice() - 1) + ", archivos "
-                + disco.getInicioArchivos() + "-" + disco.getFinArchivos() + ", memoria virtual "
-                + disco.getInicioMemoriaVirtual() + "-" + (disco.getTamanoTotal() - 1));
+        leyendaDisco.setText("<html>" + cuadroColor(COLOR_DISCO_INDICE) + " Índice &nbsp;&nbsp;" + cuadroColor(EstiloUI.FONDO) + " Archivos &nbsp;&nbsp;" + cuadroColor(COLOR_DISCO_VIRTUAL) + " Memoria virtual<br>"
+                + disco.getCantidadArchivos() + " de " + disco.getTamanoIndice() + " archivos &nbsp;·&nbsp; " + disco.getEspacioLibreArchivos() + " posiciones libres</html>");
+        leyendaDisco.setToolTipText("Índice 0-" + (disco.getTamanoIndice() - 1) + ", archivos " + disco.getInicioArchivos() + "-" + disco.getFinArchivos() + ", memoria virtual " + disco.getInicioMemoriaVirtual() + "-" + (disco.getTamanoTotal() - 1));
     }
 
     /** Cuadrito de color para la leyenda (HTML). */
@@ -859,7 +859,7 @@ public class VentanaMiniPC extends JFrame {
         etiquetaMemoriaTotal.setText("Memoria: " + configuracion.getMemoriaPrincipal());
         etiquetaSO.setText("SO: " + configuracion.getTamanoAreaSO() + " (" + Memoria.PORCENTAJE_KERNEL + "%)");
         etiquetaUsuario.setText("Usuario: " + configuracion.getTamanoAreaUsuario() + " (" + (100 - Memoria.PORCENTAJE_KERNEL) + "%)");
-        etiquetaDisco.setText("Disco: " + configuracion.getMemoriaSecundaria() + "  (índice: " + configuracion.getTamanoIndiceDisco() + ", memoria virtual fija: " + configuracion.getMemoriaVirtual() + ")");
+        etiquetaDisco.setText("Disco: " + configuracion.getMemoriaSecundaria()+ "  (índice: " + configuracion.getTamanoIndiceDisco() + ", memoria virtual fija: " + configuracion.getMemoriaVirtual() + ")");
     }
 
     private void actualizarEstadoBotones() {
